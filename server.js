@@ -1,36 +1,29 @@
 import Fastify from "fastify";
 import fastifyWs from "@fastify/websocket";
-import OpenAI from "openai";
+import fastifyFormBody from '@fastify/formbody';
+import Anthropic from "@anthropic-ai/sdk";
 import dotenv from "dotenv";
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 const DOMAIN = process.env.NGROK_URL;
 const WS_URL = `wss://${DOMAIN}/ws`;
-const WELCOME_GREETING = "Hi! I am a voice assistant powered by Twilio and Open A I . Ask me anything!";
+const WELCOME_GREETING = "Hi! I am a voice assistant powered by Twilio and Anthropic. Ask me anything!";
 const SYSTEM_PROMPT = "You are a helpful assistant. This conversation is being translated to voice, so answer carefully. When you respond, please spell out all numbers, for example twenty not 20. Do not include emojis in your responses. Do not include bullet points, asterisks, or special symbols.";
 const sessions = new Map();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 async function aiResponse(messages) {
-  let completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: messages,
-  });
-  return completion.choices[0].message.content;
+  let completion = await anthropic.messages.create({model: "claude-3-haiku-20240307", max_tokens: 1024, messages: messages, system: SYSTEM_PROMPT });
+  return completion.content[0].text;
 }
 
 const fastify = Fastify();
+fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
-fastify.get("/twiml", async (request, reply) => {
-  reply.type("text/xml").send(
-    `<?xml version="1.0" encoding="UTF-8"?>
-    <Response>
-      <Connect>
-        <ConversationRelay url="${WS_URL}" welcomeGreeting="${WELCOME_GREETING}" />
-      </Connect>
-    </Response>`
-  );
+fastify.all("/twiml", async (request, reply) => {
+  reply.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Connect><ConversationRelay url="${WS_URL}" welcomeGreeting="${WELCOME_GREETING}" /></Connect></Response>`);
 });
 
 fastify.register(async function (fastify) {
@@ -43,24 +36,24 @@ fastify.register(async function (fastify) {
           const callSid = message.callSid;
           console.log("Setup for call:", callSid);
           ws.callSid = callSid;
-          sessions.set(callSid, [{ role: "system", content: SYSTEM_PROMPT }]);
+          sessions.set(callSid, []);
           break;
         case "prompt":
           console.log("Processing prompt:", message.voicePrompt);
           const conversation = sessions.get(ws.callSid);
           conversation.push({ role: "user", content: message.voicePrompt });
 
-          const response = await aiResponse(conversation);
-          conversation.push({ role: "assistant", content: response });
+          const responseText = await aiResponse(conversation);
+          conversation.push({ role: "assistant", content: responseText });
 
           ws.send(
             JSON.stringify({
               type: "text",
-              token: response,
+              token: responseText,
               last: true,
             })
           );
-          console.log("Sent response:", response);
+          console.log("Sent response:", responseText);
           break;
         case "interrupt":
           console.log("Handling interruption.");
