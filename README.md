@@ -1,5 +1,7 @@
 # Voice Assistant with Twilio and Anthropic (Node.js)
 
+> [!NOTE] This branch adds `stream`ing tokens from Anthropic. This will improve the latency of the basic app by letting ConversationRelay and the Text-to-Speech step handle partial responses. After this step, we will add interruption handling.
+
 This application demonstrates how to use Node.js, [Twilio Voice](https://www.twilio.com/docs/voice) and [ConversationRelay](), and the [Anthropic API](https://docs.anthropic.com) to create a voice assistant that can engage in two-way conversations over a phone call. Other branches in this repository demonstrate how to add more advanced features such as streaming, interruption handling, and tool/function calling.
 
 ## Prerequisites

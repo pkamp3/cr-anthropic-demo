@@ -14,9 +14,37 @@ const sessions = new Map();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-async function aiResponse(messages) {
-  let completion = await anthropic.messages.create({model: "claude-3-haiku-20240307", max_tokens: 1024, messages: messages, system: SYSTEM_PROMPT });
-  return completion.content[0].text;
+async function aiResponseStream(messages, ws) {
+  const stream = await anthropic.messages.create({
+    model: "claude-3-haiku-20240307",
+    max_tokens: 1024,
+    messages: messages,
+    system: SYSTEM_PROMPT,
+    stream: true,
+  });
+
+  console.log("Received response chunks:");
+  for await (const chunk of stream) {
+    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+      const content = chunk.delta.text;
+
+      // Send each token
+      console.log(content);
+      ws.send(JSON.stringify({
+        type: "text",
+        token: content,
+        last: false,
+      }));
+    }
+  }
+
+  // Send the final "last" token when streaming completes
+  ws.send(JSON.stringify({
+    type: "text",
+    token: "",
+    last: true,
+  }));
+  console.log("Assistant response complete.");
 }
 
 const fastify = Fastify();
@@ -43,17 +71,7 @@ fastify.register(async function (fastify) {
           const conversation = sessions.get(ws.callSid);
           conversation.push({ role: "user", content: message.voicePrompt });
 
-          const responseText = await aiResponse(conversation);
-          conversation.push({ role: "assistant", content: responseText });
-
-          ws.send(
-            JSON.stringify({
-              type: "text",
-              token: responseText,
-              last: true,
-            })
-          );
-          console.log("Sent response:", responseText);
+          aiResponseStream(conversation, ws);
           break;
         case "interrupt":
           console.log("Handling interruption.");
