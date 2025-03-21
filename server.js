@@ -14,15 +14,16 @@ const sessions = new Map();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-async function aiResponseStream(messages, ws) {
+async function aiResponseStream(conversation, ws) {
   const stream = await anthropic.messages.create({
     model: "claude-3-haiku-20240307",
     max_tokens: 1024,
-    messages: messages,
+    messages: conversation,
     system: SYSTEM_PROMPT,
     stream: true,
   });
 
+  const assistantSegments = [];
   console.log("Received response chunks:");
   for await (const chunk of stream) {
     if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
@@ -35,6 +36,7 @@ async function aiResponseStream(messages, ws) {
         token: content,
         last: false,
       }));
+      assistantSegments.push(content);
     }
   }
 
@@ -45,6 +47,10 @@ async function aiResponseStream(messages, ws) {
     last: true,
   }));
   console.log("Assistant response complete.");
+
+  const sessionData = sessions.get(ws.callSid);
+  sessionData.conversation.push({ role: "assistant", content: assistantSegments.join("") });
+  console.log("Final accumulated response:", assistantSegments.join(""));
 }
 
 const fastify = Fastify();
@@ -64,17 +70,18 @@ fastify.register(async function (fastify) {
           const callSid = message.callSid;
           console.log("Setup for call:", callSid);
           ws.callSid = callSid;
-          sessions.set(callSid, []);
+          sessions.set(callSid, { conversation: [] });
           break;
         case "prompt":
           console.log("Processing prompt:", message.voicePrompt);
-          const conversation = sessions.get(ws.callSid);
-          conversation.push({ role: "user", content: message.voicePrompt });
+          const sessionData = sessions.get(ws.callSid);
+          sessionData.conversation.push({ role: "user", content: message.voicePrompt });
 
-          aiResponseStream(conversation, ws);
+          aiResponseStream(sessionData.conversation, ws);
           break;
         case "interrupt":
-          console.log("Handling interruption.");
+          console.log("Handling interruption; last utterance: ", message.utteranceUntilInterrupt);
+          handleInterrupt(ws.callSid, message.utteranceUntilInterrupt);
           break;
         default:
           console.warn("Unknown message type received:", message.type);
@@ -88,6 +95,38 @@ fastify.register(async function (fastify) {
     });
   });
 });
+
+function handleInterrupt(callSid, utteranceUntilInterrupt) {
+  const sessionData = sessions.get(callSid);
+  const conversation = sessionData.conversation;
+
+  let updatedConversation = [...conversation];
+
+  const interruptedIndex = updatedConversation.findIndex(
+    (message) =>
+      message.role === "assistant" &&
+      message.content.includes(utteranceUntilInterrupt),
+  );
+
+  if (interruptedIndex !== -1) {
+    const interruptedMessage = updatedConversation[interruptedIndex];
+    const interruptPosition = interruptedMessage.content.indexOf(utteranceUntilInterrupt);
+    const truncatedContent = interruptedMessage.content.substring(0, interruptPosition + utteranceUntilInterrupt.length);
+
+    updatedConversation[interruptedIndex] = {
+      ...interruptedMessage,
+      content: truncatedContent,
+    };
+
+    updatedConversation = updatedConversation.filter(
+      (message, index) =>
+        !(index > interruptedIndex && message.role === "assistant"),
+    );
+  }
+
+  sessionData.conversation = updatedConversation;
+  sessions.set(callSid, sessionData);
+}
 
 try {
   fastify.listen({ port: PORT });
