@@ -3,34 +3,58 @@ import fastifyWs from "@fastify/websocket";
 import fastifyFormBody from '@fastify/formbody';
 import Anthropic from "@anthropic-ai/sdk";
 import dotenv from "dotenv";
+import axios from "axios";
 dotenv.config();
 
 const PORT = process.env.PORT || 8080;
 const DOMAIN = process.env.NGROK_URL;
 const WS_URL = `wss://${DOMAIN}/ws`;
 const WELCOME_GREETING = "Hi! I am a voice assistant powered by Twilio and Anthropic. Ask me anything!";
-const SYSTEM_PROMPT = "You are a helpful assistant. This conversation is being translated to voice, so answer carefully. When you respond, please spell out all numbers, for example twenty not 20. Do not include emojis in your responses. Do not include bullet points, asterisks, or special symbols.";
+const SYSTEM_PROMPT = `You are a helpful assistant. This conversation is being translated to voice, so answer carefully. 
+When you respond, please spell out all numbers, for example, twenty not 20. Do not include emojis in your responses. Do not include bullet points, asterisks, or special symbols.
+You should use the 'get_programming_joke' function only when the user is asking for a programming joke (or a very close prompt, such as developer or software engineering joke). 
+For other requests, including other types of jokes, you should use your own knowledge.`;
+
 const sessions = new Map();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+async function getJoke() {
+  const response = await axios.get("https://v2.jokeapi.dev/joke/Programming?safe-mode");
+  const data = response.data;
+  return data.type === "single" ? data.joke : `${data.setup} ... ${data.delivery}`;
+}
+
 async function aiResponseStream(conversation, ws) {
+  const tools = [
+    {
+      name: "get_programming_joke",
+      description: "Fetches a programming joke",
+      input_schema: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  ];
+
   const stream = await anthropic.messages.create({
     model: "claude-3-haiku-20240307",
     max_tokens: 1024,
     messages: conversation,
     system: SYSTEM_PROMPT,
+    tools: tools,
     stream: true,
   });
 
   const assistantSegments = [];
   console.log("Received response chunks:");
+
   for await (const chunk of stream) {
     if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
       const content = chunk.delta.text;
 
-      // Send each token
-      console.log(content);
+      console.log("Chunk:", content);
       ws.send(JSON.stringify({
         type: "text",
         token: content,
@@ -38,9 +62,41 @@ async function aiResponseStream(conversation, ws) {
       }));
       assistantSegments.push(content);
     }
+
+    // Check for tool use blocks
+    if (chunk.type === 'content_block_start' && chunk.content_block.type === 'tool_use') {
+      const toolCall = chunk.content_block;
+      if (toolCall.name === "get_programming_joke") {
+        const joke = await getJoke();
+
+        // Push tool use block
+        conversation.push({
+          role: "assistant",
+          content: [{
+            type: "tool_use",
+            id: toolCall.id,
+            name: toolCall.name,
+            input: toolCall.input
+          }]
+        });
+
+        // Push tool result as the next user message
+        conversation.push({
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: toolCall.id,
+            content: joke
+          }]
+        });
+
+        ws.send(JSON.stringify({ type: "text", token: joke, last: true }));
+        assistantSegments.push(joke);
+        console.log("Fetched joke:", joke);
+      }
+    }
   }
 
-  // Send the final "last" token when streaming completes
   ws.send(JSON.stringify({
     type: "text",
     token: "",
@@ -50,7 +106,6 @@ async function aiResponseStream(conversation, ws) {
 
   const sessionData = sessions.get(ws.callSid);
   sessionData.conversation.push({ role: "assistant", content: assistantSegments.join("") });
-  console.log("Final accumulated response:", assistantSegments.join(""));
 }
 
 const fastify = Fastify();
@@ -70,12 +125,12 @@ fastify.register(async function (fastify) {
           const callSid = message.callSid;
           console.log("Setup for call:", callSid);
           ws.callSid = callSid;
-          sessions.set(callSid, { conversation: [] });
+          sessions.set(callSid, {conversation: []});
           break;
         case "prompt":
           console.log("Processing prompt:", message.voicePrompt);
           const sessionData = sessions.get(ws.callSid);
-          sessionData.conversation.push({ role: "user", content: message.voicePrompt });
+          sessionData.conversation.push({role: "user", content: message.voicePrompt});
 
           aiResponseStream(sessionData.conversation, ws);
           break;
@@ -105,7 +160,7 @@ function handleInterrupt(callSid, utteranceUntilInterrupt) {
   const interruptedIndex = updatedConversation.findIndex(
     (message) =>
       message.role === "assistant" &&
-      message.content.includes(utteranceUntilInterrupt),
+      message.content.includes(utteranceUntilInterrupt)
   );
 
   if (interruptedIndex !== -1) {

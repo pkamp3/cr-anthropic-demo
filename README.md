@@ -1,6 +1,6 @@
 # Voice Assistant with Twilio and Anthropic (Node.js)
 
-> [!NOTE] This branch adds local conversation tracking and more robust interruption handling to our Anthropic demo. This will let us inform the LLM how far a response was read to the user before the user interrupted, avoiding confusion down the line.
+> [!NOTE] This branch demonstrates function/tool calling with jokeapi.dev. 
 
 This application demonstrates how to use Node.js, [Twilio Voice](https://www.twilio.com/docs/voice) and [ConversationRelay](), and the [Anthropic API](https://docs.anthropic.com) to create a voice assistant that can engage in two-way conversations over a phone call. Other branches in this repository demonstrate how to add more advanced features such as streaming, interruption handling, and tool/function calling.
 
