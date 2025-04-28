@@ -15,12 +15,11 @@ const sessions = new Map();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function aiResponseStream(messages, ws) {
-  const stream = await anthropic.messages.create({
+  const stream = await anthropic.messages.stream({
     model: "claude-3-5-haiku-20241022",
     max_tokens: 1024,
-    messages: messages,
     system: SYSTEM_PROMPT,
-    stream: true,
+    messages: messages
   });
 
   console.log("Received response chunks:");
@@ -45,6 +44,8 @@ async function aiResponseStream(messages, ws) {
     last: true,
   }));
   console.log("Assistant response complete.");
+  return ( stream.finalMessage() );
+
 }
 
 const fastify = Fastify();
@@ -70,8 +71,9 @@ fastify.register(async function (fastify) {
           console.log("Processing prompt:", message.voicePrompt);
           const conversation = sessions.get(ws.callSid);
           conversation.push({ role: "user", content: message.voicePrompt });
-
-          aiResponseStream(conversation, ws);
+          await aiResponseStream(conversation, ws).then (response => {
+            conversation.push({ role: response.role, content: response.content });
+          });
           break;
         case "interrupt":
           console.log("Handling interruption.");
