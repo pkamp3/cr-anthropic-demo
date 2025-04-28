@@ -39,7 +39,7 @@ async function aiResponseStream(conversation, ws) {
   ];
 
   const stream = await anthropic.messages.create({
-    model: "claude-3-haiku-20240307",
+    model: "claude-3-5-haiku-20241022",
     max_tokens: 1024,
     messages: conversation,
     system: SYSTEM_PROMPT,
