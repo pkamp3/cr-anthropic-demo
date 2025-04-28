@@ -15,7 +15,7 @@ const sessions = new Map();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function aiResponse(messages) {
-  let completion = await anthropic.messages.create({model: "claude-3-haiku-20240307", max_tokens: 1024, messages: messages, system: SYSTEM_PROMPT });
+  let completion = await anthropic.messages.create({model: "claude-3-5-haiku-20241022", max_tokens: 1024, messages: messages, system: SYSTEM_PROMPT });
   return completion.content[0].text;
 }
 
