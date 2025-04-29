@@ -16,39 +16,6 @@ const sessions = new Map();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function handleInterrupt(callSid, utteranceUntilInterrupt) {
-  let conversation = sessions.get(callSid);
-  // Find the last assistant message that contains the interrupted utterance
-  const interruptedIndex = conversation.findIndex(
-    (message) =>
-      message.role === "assistant" &&
-      message.content.includes(utteranceUntilInterrupt)
-  );
-  if (interruptedIndex !== -1) {
-    const interruptedMessage = conversation[interruptedIndex];
-    const interruptPosition = interruptedMessage.content.indexOf(
-      utteranceUntilInterrupt
-    );
-    const truncatedContent = interruptedMessage.content.substring(
-      0,
-      interruptPosition + utteranceUntilInterrupt.length
-    );
-
-    // Update the interrupted message with truncated content
-    conversation[interruptedIndex] = {
-      ...interruptedMessage,
-      content: truncatedContent,
-    };
-
-    // Remove any subsequent assistant messages
-    conversation = conversation.filter(
-      (message, index) =>
-        !(index > interruptedIndex && message.role === "assistant")
-    );
-  }
-  sessions.set(callSid, conversation);
-}
-
 async function aiResponseStream(conversation, ws) {
   const stream = await anthropic.messages.create({
     model: "claude-3-5-haiku-20241022",
@@ -59,7 +26,6 @@ async function aiResponseStream(conversation, ws) {
   });
 
   let fullResponse = "";
-  let tokenCount = 0;
 
   for await (const chunk of stream) {
     if (
@@ -78,7 +44,6 @@ async function aiResponseStream(conversation, ws) {
         })
       );
       fullResponse += content;
-      tokenCount++;
     }
   }
 
@@ -132,17 +97,12 @@ fastify.register(async function (fastify) {
             });
           }
           break;
-
         case "interrupt":
           console.log(
             "Handling interruption; last utterance: ",
             message.utteranceUntilInterrupt
           );
           handleInterrupt(ws.callSid, message.utteranceUntilInterrupt);
-          break;
-
-        case "error":
-          console.error("Error message received:", message.description);
           break;
         default:
           console.warn("Unknown message type received:", message.type);
@@ -156,6 +116,39 @@ fastify.register(async function (fastify) {
     });
   });
 });
+
+function handleInterrupt(callSid, utteranceUntilInterrupt) {
+  let conversation = sessions.get(callSid);
+  // Find the last assistant message that contains the interrupted utterance
+  const interruptedIndex = conversation.findIndex(
+    (message) =>
+      message.role === "assistant" &&
+      message.content.includes(utteranceUntilInterrupt)
+  );
+  if (interruptedIndex !== -1) {
+    const interruptedMessage = conversation[interruptedIndex];
+    const interruptPosition = interruptedMessage.content.indexOf(
+      utteranceUntilInterrupt
+    );
+    const truncatedContent = interruptedMessage.content.substring(
+      0,
+      interruptPosition + utteranceUntilInterrupt.length
+    );
+
+    // Update the interrupted message with truncated content
+    conversation[interruptedIndex] = {
+      ...interruptedMessage,
+      content: truncatedContent,
+    };
+
+    // Remove any subsequent assistant messages
+    conversation = conversation.filter(
+      (message, index) =>
+        !(index > interruptedIndex && message.role === "assistant")
+    );
+  }
+  sessions.set(callSid, conversation);
+}
 
 try {
   fastify.listen({ port: PORT });
