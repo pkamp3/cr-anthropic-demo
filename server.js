@@ -120,7 +120,7 @@ fastify.register(async function (fastify) {
 function handleInterrupt(callSid, utteranceUntilInterrupt) {
   let conversation = sessions.get(callSid);
   // Find the last assistant message that contains the interrupted utterance
-  const interruptedIndex = conversation.findIndex(
+  const interruptedIndex = conversation.findLastIndex(
     (message) =>
       message.role === "assistant" &&
       message.content.includes(utteranceUntilInterrupt)
