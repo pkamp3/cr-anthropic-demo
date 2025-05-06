@@ -1,7 +1,7 @@
 {
   "name": "code",
   "version": "1.0.0",
-  "main": "passkeys.js",
+  "main": "server.js",
   "directories": {
     "doc": "docs"
   },

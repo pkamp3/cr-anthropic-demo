@@ -157,7 +157,7 @@ function handleInterrupt(callSid, utteranceUntilInterrupt) {
 
   let updatedConversation = [...conversation];
 
-  const interruptedIndex = updatedConversation.findIndex(
+  const interruptedIndex = updatedConversation.findLastIndex(
     (message) =>
       message.role === "assistant" &&
       message.content.includes(utteranceUntilInterrupt)
