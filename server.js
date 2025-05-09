@@ -18,7 +18,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function aiResponseStream(conversation, ws) {
   const stream = await anthropic.messages.create({
-    model: "claude-3-5-haiku-20241022",
+    model: "claude-3-7-sonnet-20250219",
     max_tokens: 1024,
     messages: conversation,
     system: SYSTEM_PROMPT,
@@ -123,6 +123,7 @@ function handleInterrupt(callSid, utteranceUntilInterrupt) {
   const interruptedIndex = conversation.findLastIndex(
     (message) =>
       message.role === "assistant" &&
+      message.utteranceUntilInterrupt !== "" &&
       message.content.includes(utteranceUntilInterrupt)
   );
   if (interruptedIndex !== -1) {
