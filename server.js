@@ -18,7 +18,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function aiResponseStream(conversation, ws) {
   const stream = await anthropic.messages.create({
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     messages: conversation,
     system: SYSTEM_PROMPT,
